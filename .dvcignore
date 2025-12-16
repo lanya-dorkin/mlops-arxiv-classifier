@@ -1,0 +1,6 @@
+# Add patterns to ignore by DVC
+*.pyc
+__pycache__
+.git
+.venv
+*.log

@@ -1,3 +1,59 @@
-*.txt
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
 
+# Virtual Environment
 .venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data & Models
+data/
+*.csv
+*.pkl
+*.pt
+*.pth
+*.onnx
+*.h5
+*.cbm
+*.npy
+
+# Artifacts
+mlruns/
+train_artifacts/
+artifacts/
+
+# DVC
+/data.dvc
+dvc.lock
+.dvc/tmp/
+.dvc/cache/
+
+# Environment
+.env
+.env.local
+
+# MLflow
+.mlflow/
+
+# Kaggle
+.kaggle/kaggle.json
+
+# Logs
+*.log
