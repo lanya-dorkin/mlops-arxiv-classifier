@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "arxiv-classifier"
+version = "0.1.0"
+description = "Automatic classification of ArXiv papers by category using DistilBERT"
+requires-python = ">=3.12"
+
+dependencies = [
+    "dvc[gdrive]>=3.64.2",
+    "hydra-core>=1.3.2",
+    "kaggle>=1.8.2",
+    "mlflow>=3.7.0",
+    "numpy>=2.3.5",
+    "omegaconf>=2.3.0",
+    "pandas>=2.3.3",
+    "pydantic>=2.12.5",
+    "python-fire>=0.1.0",
+    "pytorch-lightning>=2.6.0",
+    "scikit-learn>=1.8.0",
+    "torch>=2.9.1",
+    "tqdm>=4.67.1",
+    "transformers>=4.57.3",
+]
+
+[project.optional-dependencies]
+dev = []
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "C",    # flake8-comprehensions
+    "B",    # flake8-bugbear
+]
+ignore = [
+    "E501",  # line too long (handled by line-length)
+    "W503",  # line break before binary operator
+]
+
+[tool.ruff.isort]
+profile = "black"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.0",
+    "pytest>=9.0.2",
+    "ruff>=0.14.9",
+]
