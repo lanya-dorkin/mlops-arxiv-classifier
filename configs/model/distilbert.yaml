@@ -1,0 +1,4 @@
+name: "distilbert-base-uncased"
+num_classes: null
+dropout: 0.1
+freeze_backbone: true

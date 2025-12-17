@@ -1,0 +1,4 @@
+model_checkpoint: "train_artifacts/model.pt"
+max_length: 512
+batch_size: 1
+device: "auto"

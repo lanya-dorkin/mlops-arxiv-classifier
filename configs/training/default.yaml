@@ -1,0 +1,6 @@
+max_epochs: 10
+learning_rate: 1e-3
+optimizer: "adamw"
+scheduler: "linear_warmup_decay"
+warmup_steps: 500
+gradient_clip_val: 1.0

@@ -57,3 +57,5 @@ dvc.lock
 
 # Logs
 *.log
+
+*.db

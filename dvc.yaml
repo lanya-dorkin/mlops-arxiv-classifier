@@ -1,0 +1,43 @@
+stages:
+  download:
+    cmd: python -m arxiv_classifier.commands download
+    deps:
+      - arxiv_classifier/data/downloader.py
+    outs:
+      - data:
+          cache: true
+          persist: true
+
+  train_baseline:
+    cmd: python -m arxiv_classifier.commands baseline
+    deps:
+      - data
+      - arxiv_classifier/models/baseline.py
+      - arxiv_classifier/data/preprocessing.py
+    params:
+      - config.yaml:
+          - data
+          - model.max_features
+    outs:
+      - train_artifacts/baseline_model.pkl
+    metrics:
+      - train_artifacts/baseline_metrics.json:
+          cache: false
+
+  train:
+    cmd: python -m arxiv_classifier.commands train
+    deps:
+      - data
+      - arxiv_classifier/models/distilbert_classifier.py
+      - arxiv_classifier/data/dataset.py
+    params:
+      - config.yaml:
+          - data
+          - model
+          - training
+    outs:
+      - train_artifacts/model.pt:
+          cache: false
+    metrics:
+      - train_artifacts/metrics.json:
+          cache: false

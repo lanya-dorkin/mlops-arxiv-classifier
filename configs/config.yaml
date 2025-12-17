@@ -1,0 +1,8 @@
+defaults:
+  - data: arxiv
+  - model: distilbert
+  - training: default
+  - mlflow: default
+  - _self_
+
+seed: 42

@@ -43,11 +43,12 @@ select = [
 ]
 ignore = [
     "E501",  # line too long (handled by line-length)
-    "W503",  # line break before binary operator
 ]
 
 [tool.ruff.isort]
-profile = "black"
+force-single-line = false
+combine-as-imports = true
+split-on-trailing-comma = true
 
 [tool.black]
 line-length = 88
