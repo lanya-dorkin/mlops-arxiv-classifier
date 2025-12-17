@@ -18,13 +18,17 @@ from arxiv_classifier.data.downloader import download_data
 from arxiv_classifier.data.preprocessing import load_and_preprocess
 from arxiv_classifier.models.baseline import BaselineModel
 from arxiv_classifier.models.distilbert_classifier import DistilBertClassifier
+from arxiv_classifier.utils.logger import get_logger, setup_logger
+
+logger = get_logger(__name__)
 
 
 def get_git_commit() -> str:
     """Get current git commit hash."""
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to get git commit: {e}")
         return "unknown"
 
 
@@ -35,17 +39,18 @@ def ensure_data_available(data_dir: Path) -> None:
         data_dir: Path to data directory
     """
     if data_dir.exists() and list(data_dir.glob("*.csv")):
+        logger.info(f"Data already available in {data_dir}")
         return
 
-    print("Data not found. Attempting to pull from DVC...")
+    logger.info("Data not found. Attempting to pull from DVC...")
     try:
         import dvc.repo
 
         repo = dvc.repo.Repo()
         repo.pull()
-        print("Data pulled from DVC successfully")
+        logger.info("Data pulled from DVC successfully")
     except Exception as e:
-        print(f"DVC pull failed ({e}), downloading from Kaggle...")
+        logger.warning(f"DVC pull failed ({e}), downloading from Kaggle...")
         download_data(str(data_dir))
 
 
@@ -55,9 +60,9 @@ class Commands:
     @staticmethod
     def download():
         """Download dataset from Kaggle."""
-        print("Downloading ArXiv dataset...")
+        logger.info("Starting dataset download from Kaggle...")
         data_dir = download_data()
-        print(f"Dataset downloaded to {data_dir}")
+        logger.info(f"Dataset download completed: {data_dir}")
 
     @staticmethod
     def train(config_name: str = "config"):
@@ -66,6 +71,7 @@ class Commands:
         Args:
             config_name: Name of Hydra config file (without .yaml extension)
         """
+        logger.info(f"Starting training with config: {config_name}")
         config_dir = Path(__file__).parent.parent / "configs"
 
         with initialize_config_dir(
@@ -73,15 +79,19 @@ class Commands:
         ):
             cfg = compose(config_name=config_name)
 
-        # Set seed
+        logger.info(f"Configuration loaded: model={cfg.model.name}, seed={cfg.seed}")
         pl.seed_everything(cfg.seed)
 
         # Download data if needed
         data_dir = Path(cfg.data.data_dir)
         if not data_dir.exists() or not list(data_dir.glob("*.csv")):
+            logger.info("Data not found, downloading...")
             Commands.download()
 
         # Setup MLflow
+        logger.info(
+            f"Initializing MLflow: uri={cfg.mlflow.tracking_uri}, experiment={cfg.mlflow.experiment_name}"
+        )
         mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
         mlflow.set_experiment(cfg.mlflow.experiment_name)
 
@@ -138,12 +148,14 @@ class Commands:
             )
 
             # Train
-            print("Starting training...")
+            logger.info(f"Starting training for {cfg.training.max_epochs} epochs...")
             trainer.fit(model, datamodule=datamodule)
+            logger.info("Training completed")
 
             # Test
-            print("Running test set evaluation...")
+            logger.info("Running test set evaluation...")
             trainer.test(model, datamodule=datamodule)
+            logger.info("Test evaluation completed")
 
             # Save model and artifacts
             artifacts_dir = Path("train_artifacts")
@@ -159,8 +171,8 @@ class Commands:
                 pickle.dump(datamodule.label_encoder, f)
             mlflow.log_artifact(str(encoder_path))
 
-            print(f"Model saved to {model_path}")
-            print(f"Label encoder saved to {encoder_path}")
+            logger.info(f"Model saved to {model_path}")
+            logger.info(f"Label encoder saved to {encoder_path}")
 
     @staticmethod
     def baseline(config_name: str = "config"):
@@ -190,7 +202,7 @@ class Commands:
             mlflow.log_param("git_commit", get_git_commit())
 
             # Load data
-            print("Loading and preprocessing data...")
+            logger.info("Loading and preprocessing data...")
             train_df, val_df, test_df, encoder = load_and_preprocess(
                 data_dir,
                 cfg.data.train_split_date,
@@ -209,22 +221,29 @@ class Commands:
             ).tolist()
 
             # Train baseline
-            print("Training baseline model...")
+            logger.info(
+                f"Training baseline model with max_features={cfg.model.max_features}..."
+            )
             baseline = BaselineModel(max_features=cfg.model.max_features)
             baseline.train(train_texts, train_df["category_encoded"].values)
+            logger.info("Baseline model training completed")
 
             # Evaluate
-            print("Evaluating on validation set...")
+            logger.info("Evaluating on validation set...")
             val_metrics = baseline.evaluate(
                 val_texts, val_df["category_encoded"].values, encoder.classes_
             )
-            print(f"Validation Macro F1: {val_metrics['macro_f1']:.4f}")
+            logger.info(
+                f"Validation metrics - Macro F1: {val_metrics['macro_f1']:.4f}, Accuracy: {val_metrics['accuracy']:.4f}"
+            )
 
-            print("Evaluating on test set...")
+            logger.info("Evaluating on test set...")
             test_metrics = baseline.evaluate(
                 test_texts, test_df["category_encoded"].values, encoder.classes_
             )
-            print(f"Test Macro F1: {test_metrics['macro_f1']:.4f}")
+            logger.info(
+                f"Test metrics - Macro F1: {test_metrics['macro_f1']:.4f}, Accuracy: {test_metrics['accuracy']:.4f}"
+            )
 
             # Log metrics
             mlflow.log_metric("val_macro_f1", val_metrics["macro_f1"])
@@ -244,7 +263,7 @@ class Commands:
             baseline.save(model_path)
             mlflow.log_artifact(str(model_path))
 
-            print(f"Baseline model saved to {model_path}")
+            logger.info(f"Baseline model saved to {model_path}")
 
     @staticmethod
     def test(checkpoint_path: str, config_name: str = "config"):
@@ -254,6 +273,7 @@ class Commands:
             checkpoint_path: Path to model checkpoint
             config_name: Name of Hydra config file (without .yaml extension)
         """
+        logger.info(f"Starting model testing with checkpoint: {checkpoint_path}")
         config_dir = Path(__file__).parent.parent / "configs"
 
         with initialize_config_dir(
@@ -262,6 +282,7 @@ class Commands:
             cfg = compose(config_name=config_name)
 
         # Setup data
+        logger.info("Setting up data module...")
         datamodule = ArxivDataModule(
             data_dir=cfg.data.data_dir,
             batch_size=cfg.data.batch_size,
@@ -273,11 +294,15 @@ class Commands:
         datamodule.setup()
 
         # Load model
+        logger.info(f"Loading model from {checkpoint_path}...")
         model = DistilBertClassifier.load_from_checkpoint(checkpoint_path)
+        logger.info("Model loaded successfully")
 
         # Test
+        logger.info("Running test evaluation...")
         trainer = pl.Trainer(accelerator="auto", devices="auto")
         trainer.test(model, datamodule=datamodule)
+        logger.info("Test evaluation completed")
 
     @staticmethod
     def infer(
@@ -294,16 +319,16 @@ class Commands:
             summary: Paper summary (if single prediction)
             json_file: Path to JSON file with multiple samples
         """
+        logger.info(f"Starting inference with checkpoint: {checkpoint_path}")
         config_dir = Path(__file__).parent.parent / "configs"
 
         with initialize_config_dir(config_dir=str(config_dir.absolute())):
             cfg = compose(config_name="config")
 
         # Load model
+        logger.info("Loading model and tokenizer...")
         model = DistilBertClassifier.load_from_checkpoint(checkpoint_path)
         model.eval()
-
-        # Load tokenizer
         tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
 
         # Load label encoder
@@ -312,19 +337,25 @@ class Commands:
         if encoder_path.exists():
             with open(encoder_path, "rb") as f:
                 label_encoder = pickle.load(f)
+            logger.info(f"Label encoder loaded: {len(label_encoder.classes_)} classes")
+        else:
+            logger.warning("Label encoder not found, using class indices")
 
         # Prepare input
         if json_file:
+            logger.info(f"Loading samples from {json_file}...")
             with open(json_file) as f:
                 data = json.load(f)
             samples = data if isinstance(data, list) else [data]
+            logger.info(f"Loaded {len(samples)} samples")
         elif title and summary:
             samples = [{"title": title, "summary": summary}]
+            logger.info("Processing single sample")
         else:
             raise ValueError("Provide either title+summary or json_file")
 
         results = []
-        for sample in samples:
+        for i, sample in enumerate(samples, 1):
             text = f"{sample['title']} {sample['summary']}"
             encoding = tokenizer(
                 text,
@@ -354,11 +385,12 @@ class Commands:
             }
             results.append(result)
 
-            print(f"Title: {result['title']}")
-            print(f"Category: {result['category']}")
-            print(f"Confidence: {result['confidence']:.4f}")
-            print()
+            logger.info(
+                f"Sample {i}/{len(samples)} - Category: {result['category']}, "
+                f"Confidence: {result['confidence']:.4f}"
+            )
 
+        logger.info(f"Inference completed for {len(results)} samples")
         return results
 
     @staticmethod
@@ -372,9 +404,11 @@ class Commands:
             checkpoint_path: Path to PyTorch checkpoint
             output_path: Output path for ONNX model
         """
+        logger.info(f"Exporting model to ONNX: {checkpoint_path} -> {output_path}")
         from arxiv_classifier.utils.export import export_to_onnx
 
         export_to_onnx(checkpoint_path, output_path)
+        logger.info(f"ONNX model exported to {output_path}")
 
     @staticmethod
     def export_torchscript(
@@ -387,9 +421,13 @@ class Commands:
             checkpoint_path: Path to PyTorch checkpoint
             output_path: Output path for TorchScript model
         """
+        logger.info(
+            f"Exporting model to TorchScript: {checkpoint_path} -> {output_path}"
+        )
         from arxiv_classifier.utils.export import export_to_torchscript
 
         export_to_torchscript(checkpoint_path, output_path)
+        logger.info(f"TorchScript model exported to {output_path}")
 
     @staticmethod
     def serve(
@@ -408,17 +446,18 @@ class Commands:
 
         from arxiv_classifier.api import app, load_model
 
-        # Load model
+        logger.info(f"Loading model from {checkpoint_path}...")
         load_model(checkpoint_path)
+        logger.info("Model loaded successfully")
 
-        # Start server
-        print(f"Starting API server on {host}:{port}")
-        print(f"API Documentation available at http://{host}:{port}/docs")
+        logger.info(f"Starting API server on {host}:{port}")
+        logger.info(f"API Documentation available at http://{host}:{port}/docs")
         uvicorn.run(app, host=host, port=port)
 
 
 def main():
     """Main entry point."""
+    setup_logger()
     fire.Fire(Commands)
 
 

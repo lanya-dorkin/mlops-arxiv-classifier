@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 from transformers import DistilBertTokenizer
 
 from arxiv_classifier.models.distilbert_classifier import DistilBertClassifier
+from arxiv_classifier.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 app = FastAPI(
     title="ArXiv Paper Category Classifier",
@@ -49,22 +52,31 @@ def load_model(checkpoint_path: str = "train_artifacts/model.pt"):
     """Load model from checkpoint."""
     global _model, _tokenizer, _label_encoder
 
+    logger.info(f"Loading model from {checkpoint_path}...")
     _model = DistilBertClassifier.load_from_checkpoint(checkpoint_path)
     _model.eval()
+    logger.info("Model loaded and set to evaluation mode")
 
+    logger.info("Loading tokenizer...")
     _tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
+    logger.info("Tokenizer loaded")
 
     # Load label encoder (should be saved during training)
     encoder_path = Path("train_artifacts/label_encoder.pkl")
     if encoder_path.exists():
         with open(encoder_path, "rb") as f:
             _label_encoder = pickle.load(f)
+        logger.info(f"Label encoder loaded: {len(_label_encoder.classes_)} classes")
+    else:
+        logger.warning("Label encoder not found, using class indices")
 
 
 @app.on_event("startup")
 async def startup_event():
     """Load model on startup."""
+    logger.info("API server starting up...")
     load_model()
+    logger.info("API server ready")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -87,8 +99,10 @@ async def predict(request: PredictionRequest):
         Predicted category and confidence score
     """
     if _model is None or _tokenizer is None:
+        logger.error("Model not loaded, returning 503")
         raise HTTPException(status_code=503, detail="Model not loaded")
 
+    logger.debug(f"Processing prediction request: title='{request.title[:50]}...'")
     text = f"{request.title} {request.summary}"
     encoding = _tokenizer(
         text,
@@ -109,6 +123,8 @@ async def predict(request: PredictionRequest):
     else:
         category = f"class_{pred_idx.item()}"
 
+    logger.info(f"Prediction: category={category}, confidence={confidence.item():.4f}")
+
     return PredictionResponse(
         category=category,
         confidence=confidence.item(),
@@ -118,4 +134,7 @@ async def predict(request: PredictionRequest):
 if __name__ == "__main__":
     import uvicorn
 
+    from arxiv_classifier.utils.logger import setup_logger
+
+    setup_logger()
     uvicorn.run(app, host="0.0.0.0", port=8000)

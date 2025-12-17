@@ -26,6 +26,7 @@ ENV/
 # Data & Models
 data/
 !arxiv_classifier/data/
+!configs/data/
 *.csv
 *.pkl
 *.pt

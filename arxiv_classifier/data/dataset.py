@@ -9,6 +9,9 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import DistilBertTokenizer
 
 from arxiv_classifier.data.preprocessing import load_and_preprocess
+from arxiv_classifier.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ArxivDataset(Dataset):
@@ -110,6 +113,7 @@ class ArxivDataModule(pl.LightningDataModule):
         Args:
             stage: Stage name (fit, test, predict, None)
         """
+        logger.info(f"Setting up datasets for stage: {stage}")
         train_df, val_df, test_df, encoder = load_and_preprocess(
             self.data_dir, self.train_date, self.val_date
         )
@@ -119,6 +123,11 @@ class ArxivDataModule(pl.LightningDataModule):
         self.train_dataset = ArxivDataset(train_df, self.tokenizer, self.max_length)
         self.val_dataset = ArxivDataset(val_df, self.tokenizer, self.max_length)
         self.test_dataset = ArxivDataset(test_df, self.tokenizer, self.max_length)
+
+        logger.info(
+            f"Datasets created: train={len(self.train_dataset)}, "
+            f"val={len(self.val_dataset)}, test={len(self.test_dataset)}"
+        )
 
     def train_dataloader(self) -> DataLoader:
         """Return train dataloader."""

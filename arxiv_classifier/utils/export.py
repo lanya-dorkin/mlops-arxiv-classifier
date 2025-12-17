@@ -3,6 +3,9 @@
 import torch
 
 from arxiv_classifier.models.distilbert_classifier import DistilBertClassifier
+from arxiv_classifier.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def export_to_onnx(
@@ -17,9 +20,11 @@ def export_to_onnx(
         output_path: Output path for ONNX model
         opset_version: ONNX opset version
     """
+    logger.info(f"Loading model from {checkpoint_path}...")
     model = DistilBertClassifier.load_from_checkpoint(checkpoint_path)
     model.eval()
 
+    logger.info(f"Exporting to ONNX format (opset_version={opset_version})...")
     # Create dummy input
     batch_size = 1
     seq_length = 512
@@ -41,7 +46,7 @@ def export_to_onnx(
         opset_version=opset_version,
     )
 
-    print(f"Model exported to {output_path}")
+    logger.info(f"ONNX model exported to {output_path}")
 
 
 def export_to_torchscript(
@@ -54,9 +59,11 @@ def export_to_torchscript(
         checkpoint_path: Path to PyTorch checkpoint
         output_path: Output path for TorchScript model
     """
+    logger.info(f"Loading model from {checkpoint_path}...")
     model = DistilBertClassifier.load_from_checkpoint(checkpoint_path)
     model.eval()
 
+    logger.info("Tracing model for TorchScript export...")
     # Trace model
     batch_size = 1
     seq_length = 512
@@ -71,4 +78,4 @@ def export_to_torchscript(
     # Save
     traced_model.save(output_path)
 
-    print(f"Model exported to {output_path}")
+    logger.info(f"TorchScript model exported to {output_path}")
