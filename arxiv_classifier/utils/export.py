@@ -63,6 +63,24 @@ def export_to_torchscript(
     model = DistilBertClassifier.load_from_checkpoint(checkpoint_path)
     model.eval()
 
+    # Create a wrapper that only exposes forward method to avoid PyTorch Lightning trainer issues
+    class ModelWrapper(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+            self.backbone = model.backbone
+            self.dropout = model.dropout
+            self.classifier = model.classifier
+
+        def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
+            outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
+            pooled = outputs[0][:, 0, :]  # [CLS] token
+            dropped = self.dropout(pooled)
+            logits = self.classifier(dropped)
+            return logits
+
+    wrapped_model = ModelWrapper(model)
+    wrapped_model.eval()
+
     logger.info("Tracing model for TorchScript export...")
     # Trace model
     batch_size = 1
@@ -70,10 +88,11 @@ def export_to_torchscript(
     dummy_input_ids = torch.randint(0, 30522, (batch_size, seq_length))
     dummy_attention_mask = torch.ones(batch_size, seq_length, dtype=torch.long)
 
-    traced_model = torch.jit.trace(
-        model,
-        (dummy_input_ids, dummy_attention_mask),
-    )
+    with torch.no_grad():
+        traced_model = torch.jit.trace(
+            wrapped_model,
+            (dummy_input_ids, dummy_attention_mask),
+        )
 
     # Save
     traced_model.save(output_path)
