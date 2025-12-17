@@ -2,12 +2,10 @@
 
 import json
 import pickle
-import subprocess
 from pathlib import Path
 from typing import Optional
 
 import fire
-import mlflow
 import pytorch_lightning as pl
 import torch
 from hydra import compose, initialize_config_dir
@@ -18,40 +16,11 @@ from arxiv_classifier.data.downloader import download_data
 from arxiv_classifier.data.preprocessing import load_and_preprocess
 from arxiv_classifier.models.baseline import BaselineModel
 from arxiv_classifier.models.distilbert_classifier import DistilBertClassifier
+from arxiv_classifier.utils.git import get_git_commit
 from arxiv_classifier.utils.logger import get_logger, setup_logger
+from arxiv_classifier.utils.mlflow import MLflowContext
 
 logger = get_logger(__name__)
-
-
-def get_git_commit() -> str:
-    """Get current git commit hash."""
-    try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    except Exception as e:
-        logger.warning(f"Failed to get git commit: {e}")
-        return "unknown"
-
-
-def ensure_data_available(data_dir: Path) -> None:
-    """Ensure data is available via DVC or download from Kaggle.
-
-    Args:
-        data_dir: Path to data directory
-    """
-    if data_dir.exists() and list(data_dir.glob("*.csv")):
-        logger.info(f"Data already available in {data_dir}")
-        return
-
-    logger.info("Data not found. Attempting to pull from DVC...")
-    try:
-        import dvc.repo
-
-        repo = dvc.repo.Repo()
-        repo.pull()
-        logger.info("Data pulled from DVC successfully")
-    except Exception as e:
-        logger.warning(f"DVC pull failed ({e}), downloading from Kaggle...")
-        download_data(str(data_dir))
 
 
 class Commands:
@@ -88,16 +57,12 @@ class Commands:
             logger.info("Data not found, downloading...")
             Commands.download()
 
-        # Setup MLflow
-        logger.info(
-            f"Initializing MLflow: uri={cfg.mlflow.tracking_uri}, experiment={cfg.mlflow.experiment_name}"
-        )
-        mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-        mlflow.set_experiment(cfg.mlflow.experiment_name)
-
-        with mlflow.start_run():
+        # Setup MLflow (optional)
+        with MLflowContext(
+            cfg.mlflow.tracking_uri, cfg.mlflow.experiment_name
+        ) as mlflow_ctx:
             # Log parameters
-            mlflow.log_params(
+            mlflow_ctx.log_params(
                 {
                     "model": cfg.model.name,
                     "learning_rate": cfg.training.learning_rate,
@@ -106,7 +71,7 @@ class Commands:
                     "freeze_backbone": cfg.model.freeze_backbone,
                 }
             )
-            mlflow.log_param("git_commit", get_git_commit())
+            mlflow_ctx.log_param("git_commit", get_git_commit())
 
             # Setup data
             datamodule = ArxivDataModule(
@@ -128,14 +93,21 @@ class Commands:
             )
 
             # Setup trainer
-            logger = pl.loggers.MLFlowLogger(
-                experiment_name=cfg.mlflow.experiment_name,
-                tracking_uri=cfg.mlflow.tracking_uri,
-            )
+            mlflow_logger = None
+            if mlflow_ctx.mlflow_available:
+                try:
+                    mlflow_logger = pl.loggers.MLFlowLogger(
+                        experiment_name=cfg.mlflow.experiment_name,
+                        tracking_uri=cfg.mlflow.tracking_uri,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to create MLFlowLogger: {e}. Continuing without it."
+                    )
 
             trainer = pl.Trainer(
                 max_epochs=cfg.training.max_epochs,
-                logger=logger,
+                logger=mlflow_logger,
                 accelerator="auto",
                 devices="auto",
                 callbacks=[
@@ -163,13 +135,13 @@ class Commands:
 
             model_path = artifacts_dir / "model.pt"
             trainer.save_checkpoint(model_path)
-            mlflow.log_artifact(str(model_path))
+            mlflow_ctx.log_artifact(str(model_path))
 
             # Save label encoder
             encoder_path = artifacts_dir / "label_encoder.pkl"
             with open(encoder_path, "wb") as f:
                 pickle.dump(datamodule.label_encoder, f)
-            mlflow.log_artifact(str(encoder_path))
+            mlflow_ctx.log_artifact(str(encoder_path))
 
             logger.info(f"Model saved to {model_path}")
             logger.info(f"Label encoder saved to {encoder_path}")
@@ -193,13 +165,11 @@ class Commands:
         if not data_dir.exists() or not list(data_dir.glob("*.csv")):
             Commands.download()
 
-        # Setup MLflow
-        mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-        mlflow.set_experiment(f"{cfg.mlflow.experiment_name}-baseline")
-
-        with mlflow.start_run():
-            mlflow.log_param("model_type", "baseline_tfidf")
-            mlflow.log_param("git_commit", get_git_commit())
+        # Setup MLflow (optional)
+        experiment_name = f"{cfg.mlflow.experiment_name}-baseline"
+        with MLflowContext(cfg.mlflow.tracking_uri, experiment_name) as mlflow_ctx:
+            mlflow_ctx.log_param("model_type", "baseline_tfidf")
+            mlflow_ctx.log_param("git_commit", get_git_commit())
 
             # Load data
             logger.info("Loading and preprocessing data...")
@@ -246,22 +216,25 @@ class Commands:
             )
 
             # Log metrics
-            mlflow.log_metric("val_macro_f1", val_metrics["macro_f1"])
-            mlflow.log_metric("val_accuracy", val_metrics["accuracy"])
-            mlflow.log_metric("test_macro_f1", test_metrics["macro_f1"])
-            mlflow.log_metric("test_accuracy", test_metrics["accuracy"])
+            mlflow_ctx.log_metric("val_macro_f1", val_metrics["macro_f1"])
+            mlflow_ctx.log_metric("val_accuracy", val_metrics["accuracy"])
+            mlflow_ctx.log_metric("test_macro_f1", test_metrics["macro_f1"])
+            mlflow_ctx.log_metric("test_accuracy", test_metrics["accuracy"])
 
             # Log per-class metrics
             for class_name, metrics in test_metrics["per_class"].items():
-                mlflow.log_metric(f"test_{class_name}_f1", metrics["f1"])
-                mlflow.log_metric(f"test_{class_name}_precision", metrics["precision"])
+                # Sanitize class name for MLflow (handled in log_metric, but explicit here for clarity)
+                mlflow_ctx.log_metric(f"test_{class_name}_f1", metrics["f1"])
+                mlflow_ctx.log_metric(
+                    f"test_{class_name}_precision", metrics["precision"]
+                )
 
             # Save model
             artifacts_dir = Path("train_artifacts")
             artifacts_dir.mkdir(exist_ok=True)
             model_path = artifacts_dir / "baseline_model.pkl"
             baseline.save(model_path)
-            mlflow.log_artifact(str(model_path))
+            mlflow_ctx.log_artifact(str(model_path))
 
             logger.info(f"Baseline model saved to {model_path}")
 
