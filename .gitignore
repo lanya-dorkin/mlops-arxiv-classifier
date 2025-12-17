@@ -62,3 +62,7 @@ artifacts/
 
 *.db
 /data
+
+lightning_logs/
+mlartifacts/
+.ruff_cache/

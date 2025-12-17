@@ -17,7 +17,8 @@ RUN pip install --no-cache-dir uv && \
 # Copy application code
 COPY arxiv_classifier ./arxiv_classifier
 COPY configs ./configs
-COPY train_artifacts ./train_artifacts 2>/dev/null || true
+
+RUN mkdir -p ./train_artifacts
 
 # Expose API port
 EXPOSE 8000
