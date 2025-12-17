@@ -29,6 +29,8 @@ class Commands:
     @staticmethod
     def download():
         """Download dataset from Kaggle."""
+        from arxiv_classifier.data.downloader import download_data
+
         logger.info("Starting dataset download from Kaggle...")
         data_dir = download_data()
         logger.info(f"Dataset download completed: {data_dir}")
@@ -52,10 +54,12 @@ class Commands:
         pl.seed_everything(cfg.seed)
 
         # Download data if needed
+        from arxiv_classifier.data.downloader import download_data
+
         data_dir = Path(cfg.data.data_dir)
         if not data_dir.exists() or not list(data_dir.glob("*.csv")):
             logger.info("Data not found, downloading...")
-            Commands.download()
+            download_data(str(data_dir))
 
         # Setup MLflow (optional)
         with MLflowContext(
@@ -161,9 +165,12 @@ class Commands:
             cfg = compose(config_name=config_name, overrides=["model=baseline"])
 
         # Download data if needed
+        from arxiv_classifier.data.downloader import download_data
+
         data_dir = Path(cfg.data.data_dir)
         if not data_dir.exists() or not list(data_dir.glob("*.csv")):
-            Commands.download()
+            logger.info("Data not found, downloading...")
+            download_data(str(data_dir))
 
         # Setup MLflow (optional)
         experiment_name = f"{cfg.mlflow.experiment_name}-baseline"
@@ -283,6 +290,7 @@ class Commands:
         title: Optional[str] = None,
         summary: Optional[str] = None,
         json_file: Optional[str] = None,
+        max_length: int = 512,
     ):
         """Run inference on new data.
 
@@ -291,12 +299,9 @@ class Commands:
             title: Paper title (if single prediction)
             summary: Paper summary (if single prediction)
             json_file: Path to JSON file with multiple samples
+            max_length: Maximum sequence length (default: 512)
         """
         logger.info(f"Starting inference with checkpoint: {checkpoint_path}")
-        config_dir = Path(__file__).parent.parent / "configs"
-
-        with initialize_config_dir(config_dir=str(config_dir.absolute())):
-            cfg = compose(config_name="config")
 
         # Load model
         logger.info("Loading model and tokenizer...")
@@ -332,7 +337,7 @@ class Commands:
             text = f"{sample['title']} {sample['summary']}"
             encoding = tokenizer(
                 text,
-                max_length=cfg.data.max_length,
+                max_length=max_length,
                 padding="max_length",
                 truncation=True,
                 return_tensors="pt",
