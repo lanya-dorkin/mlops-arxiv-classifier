@@ -41,8 +41,8 @@ train_artifacts/
 artifacts/
 
 # DVC
-/data.dvc
-dvc.lock
+# /data.dvc
+# dvc.lock
 .dvc/tmp/
 .dvc/cache/
 
@@ -60,3 +60,4 @@ dvc.lock
 *.log
 
 *.db
+/data

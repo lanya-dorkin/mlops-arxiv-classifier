@@ -1,0 +1,15 @@
+schema: '2.0'
+stages:
+  download:
+    cmd: python -m arxiv_classifier.commands download
+    deps:
+    - path: arxiv_classifier/data/downloader.py
+      hash: md5
+      md5: 451a95a69fe1e36909a6726cb009e52b
+      size: 643
+    outs:
+    - path: data
+      hash: md5
+      md5: 028d7e7d829e8b6610ab6690be38cafb.dir
+      size: 186543036
+      nfiles: 1

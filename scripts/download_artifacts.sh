@@ -6,11 +6,11 @@ set -e
 echo "Downloading data from Kaggle..."
 python -m arxiv_classifier.commands download
 
-echo "Adding to DVC..."
-dvc add data/
+echo "Updating DVC lock file..."
+dvc commit download
 
 echo "Committing DVC files..."
-git add data.dvc .dvc/.gitignore
-git commit -m "Add data to DVC tracking"
+git add dvc.lock
+git commit -m "Update data in DVC tracking"
 
 echo "Done!"
