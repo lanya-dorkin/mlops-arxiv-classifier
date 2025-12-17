@@ -12,7 +12,6 @@ from hydra import compose, initialize_config_dir
 from transformers import DistilBertTokenizer
 
 from arxiv_classifier.data.dataset import ArxivDataModule
-from arxiv_classifier.data.downloader import download_data
 from arxiv_classifier.data.preprocessing import load_and_preprocess
 from arxiv_classifier.models.baseline import BaselineModel
 from arxiv_classifier.models.distilbert_classifier import DistilBertClassifier
